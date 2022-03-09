@@ -1,4 +1,4 @@
-# platzi-bitcoin-core
+# Platzi-bitcoin-core
 Repositorio que contiene script y guía para montar tu propio nodo de Bitcoin
 
 ### Disco:
@@ -8,7 +8,9 @@ que te permita almacenar la cadena de bloques(Blockchain) completa.
 
 Cadena de bloques e indice de transacciones: 600 GB aproximadamente.
 
-Instala tu editor favorito, como emacs o usa nano(por defecto)
+Para el ejemplo del curso usaremos Testnet, necesitas 60 GB aproximadamente para almacenar la cadena de bloques.
+
+Instala tu editor favorito, como emacs o usa nano o vi(por defecto)
 ```shell
 sudo apt update && sudo apt upgrade -y && sudo apt install -y emacs
 
@@ -19,8 +21,7 @@ emacs
 sudo chown -R ubuntu ~/.emacs.d
 ```
 
-Si usas un disco externo para la cadena, que no ha sido inicializado, comienza por 
-inicializarlo con un nombre como /blockchain-data/
+Si usas un disco externo para la cadena, que no ha sido inicializado, comienza por inicializarlo con un nombre como /blockchain-data/
 
 ```shell
 
@@ -31,7 +32,6 @@ lsblk
 # Revisa que tu almacenamiento esté vacío
 sudo file -s /dev/xxxxx
 # Debería mostrarte algo como "/dev/xxxxx: data" que sifnifica que está vacío
-
 
 # Dale formato al almacenamiento como ext4
 sudo mkfs -t ext4 /dev/xxxxx
@@ -47,7 +47,7 @@ df -h .
 
 # Monta la partición de manera automática, pero primera crea un backup de la configuración
 sudo cp /etc/fstab /etc/fstab.bak
-sudo emacs /etc/fstab
+sudo vi /etc/fstab
 
 # Crea una nueva entrada en el archivo
 /dev/xxxxx /blockchain-data ext4 defaults,nofail 0 0
@@ -55,7 +55,6 @@ sudo emacs /etc/fstab
 # Guarda y montalo, luego prueba:
 sudo mount -a
 # No debería mostrar errores
-
 
 # Apropiate del directorio:
 sudo chown `whoami` /blockchain-data
@@ -71,7 +70,7 @@ Instrucciones:
 sudo apt-get update && sudo apt install -y apt-transport-https
 
 # Edita las fuentes para instalar los paquetes
-sudo emacs /etc/apt/sources.list.d/tor.list
+sudo vi /etc/apt/sources.list.d/tor.list
 
 deb https://deb.torproject.org/torproject.org focal main
 deb-src https://deb.torproject.org/torproject.org focal main
@@ -91,11 +90,11 @@ Configura Tor:
 
 ```shell
 # Edita la configuración
-sudo emacs /etc/tor/torrc
+sudo vi /etc/tor/torrc
 ```
 
 ```
-# Añande esta líneas en la el encabezado del archivo:
+# Añade esta líneas en la el encabezado del archivo:
 
 ControlPort 9051
 CookieAuthentication 1
@@ -120,64 +119,101 @@ Esto debe mostrarte un  `Congratulations`
 
 ## Instalando Bitcoin Core
 
-Instalación:
+### Instalación:
 
-```
+```shell
+# Instala las dependencias necesarias para correr bitcoin core 
+# ccache no es requerida pero puede servirte. https://github.com/ccache/ccache
+# Si quieres conocer más https://github.com/bitcoin/bitcoin/blob/master/doc/dependencies.md 
 sudo apt install git build-essential libtool autotools-dev automake pkg-config libssl-dev libevent-dev bsdmainutils libboost-system-dev libboost-filesystem-dev libboost-chrono-dev libboost-program-options-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev
+
+# Clona el código fuente de github, puedes hacerlo desde el repositorio de Bitcoin o través de un fork que generes
 git clone -b v22.0 https://github.com/bitcoin/bitcoin.git
+
+# Muévete al directorio
 cd bitcoin/
+
+# Corre este comando para poder usar BerkeleyDB (Base de datos para la billetera)
+./contrib/install_db4.sh `pwd`
+
+# Ten en cuenta la salida del proceso anterior, el export te servirá más adelante
+
+# Ejecuta export BDB_PREFIX='<PATH-TO>/db4' antes de correr el script autogen.sh
 ./autogen.sh
-./configure CXXFLAGS="--param ggc-min-expand=1 --param ggc-min-heapsize=32768" --enable-cxx --with-zmq --without-gui --disable-shared --with-pic --disable-tests --disable-bench --enable-upnp-default --disable-wallet
+
+# En tu configure puedes usar cuantas banderas necesites
+# Para configurar tu complilación, por ejemplo CXXFLAGS u otras banderas como --with-zmq, --without-gui BDB libs es necesario para que puedas usar la billetera, recuerda que esto es solo un ejemplo, a nivel productivo no deberías usar la billetera.
+# Puedes ejecutar ./configure --help para encontrar todas las opciones posibles.
+./configure BDB_LIBS="-L${BDB_PREFIX}/lib -ldb_cxx-4.8" BDB_CFLAGS="-I${BDB_PREFIX}/include" CXXFLAGS="--param ggc-min-expand=1 --param ggc-min-heapsize=32768" --with-zmq --without-gui 
+
+# make construye tu programa, usamos nproc para conocer cuantos núcleos tiene nuestro procesador.
+# -j especifica el número de tareas a correr de manera simultánea
 # Esto puede tomar un tiempo....
 make -j "$(($(nproc)+1))"
+
+# Puedes usar ccache para acelerar el proceso si reconstruyes múltiples veces, para más información https://github.com/bitcoin/bitcoin/blob/master/doc/productivity.md 
+
+# Make install permite usar bitcoind y bitcoin-cli en cualquier parte de nuestro sistema operativo
 sudo make install
 ```
 
-Configura los directorios en el almacenamiento de volumen y crea eñ directorio para el archivot de configuración:
+### Pruebas Unitarias:
+
+- `make check`, o
+- `make -j "$(($(nproc)+1))" check` para usar múltiples hilos en Linux
+
+### Pruebas Funcionales: 
+
+* `test/functional/test_runner.py` o el mismo comando con `-j 20` para correr las pruebas más rápido en paralelo  `--extended` para correr la *suite* de pruebas extendida  o usa  `--help` para revisar cómo puedes ejecutar las pruebas 
+
+### Configuración:
+
+Configura los directorios en el almacenamiento que configuraste(blockchain-data) y crea el directorio de datos donde los archivos de Bitcoin estarán almacenados, incluyendo el archivo de la billetera.
 
 ```shell
 mkdir -p /blockchain-data/.bitcoin/data && mkdir ~/.bitcoin
 ```
 
-Descarga y usa el [script] para generar las credenciales.
+Descarga y usa el  [script](https://github.com/bitcoin/bitcoin/blob/master/share/rpcauth/rpcauth.py) para generar las credenciales RPC.
 
 ```shell
 wget https://raw.githubusercontent.com/bitcoin/bitcoin/master/share/rpcauth/rpcauth.py
 python ./rpcauth.py bitcoinrpc
-# Esto pondrá la autenticación en bitcoin.conf
-# Guarda la contraseña, te servirá para servicios que crees
+# Este script te entregará el string de autenticación para añadir al archivo bitcoin.conf
+# Guarda la contraseña, te servirá para servicios que generes más adelante (Ejemplo, lightning)
 ```
 
 Edita el archivo de configuración.
 
 ```shell
-emacs ~/.bitcoin/bitcoin.conf
+vi ~/.bitcoin/bitcoin.conf
 ```
 
 Añade lo siguiente
 
 ```ini
 # Añade la mejor altura:
-assumevalid=
+# Si tienes otro nodo, utiliza getbestblockhash para agregar este valor, ejemplo: 00000000000000522f7f46b8c1ba3cee6287535b124ecbd00ac7cb911d5a573
+assumevalid=0
 
 # Correlo como daemon
 daemon=1
 
-# Configura el archivo de almacenamiento
+# Elige en qué red vas a correr tu nodo, tambien puedes usar mainnet, regtest o signnet
+testnet=1 
+
+# Configura el directorio de datos
 datadir=/blockchain-data/.bitcoin/data
 
-# Configura el numero de megabytrd usados por RAM, osea el 50% aproximadamente
+# Configura el numero de megabytes usados por RAM
 dbcache=3000
 
 # Añade visibilidad al mempool y llamados RPC para debug
 debug=mempool
 debug=rpc
 
-# Apaga la billetera, no la usaremos
-disablewallet=1
-
-# Si usas tor, no te preocupes por escuchar a. pares.
-listen=0
+# Escucha a tus pares
+listen=1
 
 # Pon un límite al número de megabytes necesitados en el mempool
 maxmempool=100
@@ -189,10 +225,7 @@ maxuploadtarget=1000
 nopeerbloomfilters=1
 peerbloomfilters=0
 
-# No aceptes multisig deprecado
-permitbaremultisig=0
-
-# Configura la autenticación RPC
+# Configura la autenticación RPC con el valor que obtuviste al correr el script
 rpcauth=
 
 # Prende el servidor RPC
@@ -201,51 +234,18 @@ server=1
 # Reduce el tamaño del archivos de logs al reiniciar el nodo
 shrinkdebuglog=1
 
-# Configura testnet si es necesario 
-testnet=1
-
 # Iniciar el índice de busqueda de transacciones
 txindex=1
 
 # Enciende la publicación ZMQ
 zmqpubrawblock=tcp://127.0.0.1:28332
 zmqpubrawtx=tcp://127.0.0.1:28333
+
 ```
 
-Usas Tor? añade estas líneas:
+Existen muchos otros parámetros que puedes añadir dependiendo de tus necesidades, puedes encontrar un ejemplo [aquí](https://github.com/bitcoin/bitcoin/blob/master/share/examples/bitcoin.conf)
 
-```ini
-# Peer en mainnet
-addnode=gyn2vguc35viks2b.onion
-addnode=kvd44sw7skb5folw.onion
-addnode=nkf5e6b7pl4jfd4a.onion
-addnode=yu7sezmixhmyljn4.onion
-addnode=3ffk7iumtx3cegbi.onion
-addnode=3nmbbakinewlgdln.onion
-addnode=4j77gihpokxu2kj4.onion
-addnode=546esc6botbjfbxb.onion
-addnode=5at7sq5nm76xijkd.onion
-addnode=77mx2jsxaoyesz2p.onion
-addnode=7g7j54btiaxhtsiy.onion
-addnode=a6obdgzn67l7exu3.onion
-addnode=ab64h7olpl7qpxci.onion
-addnode=am2a4rahltfuxz6l.onion
-addnode=azuxls4ihrr2mep7.onion
-addnode=bitcoin7bi4op7wb.onion
-addnode=bitcoinostk4e4re.onion
-addnode=bk7yp6epnmcllq72.onion
-addnode=bmutjfrj5btseddb.onion
-addnode=ceeji4qpfs3ms3zc.onion
-addnode=clexmzqio7yhdao4.onion
-addnode=gb5ypqt63du3wfhn.onion
-addnode=h2vlpudzphzqxutd.onion
-
-# Solo usa Tor
-onlynet=onion
-
-# Conectate al proxy de Tor
-proxy=127.0.0.1:9050
-```
+**Nota**:  Si usas Tor debes añadir algunos pares ya conocidos usando `addnode=addnode=direccion.onion` , Puedes agregar cuantos pares quieras, debes conectarte al proxy usando `proxy=anfitrion:puerto`.
 
 Inicia Bitcoin Core:
 
@@ -259,7 +259,7 @@ Añade Bitcoin Core a crontab:
 crontab -e
 ```
 
-Añade una línea:
+Añade la siguiente línea:
 
 ```
 # Inicia Bitcoin Core al iniciar el sistema
@@ -276,7 +276,7 @@ ln -s /blockchain/.bitcoin/data/debug.log ~/bitcoind-mainnet.log
 ln -s /blockchain/.bitcoin/data/testnet3/debug.log ~/bitcoind-testnet.log
 ```
 
-
+Tu nodo ya está corriendo, puedes pasar a la sección bitcoin-cli para encontrar los comandos que puedes ejecutar.
 
 
 
